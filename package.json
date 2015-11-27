@@ -1,0 +1,23 @@
+{
+  "name": "node-stat",
+  "version": "1.0.0",
+  "description": "statistic lib for node.js",
+  "main": "index.js",
+  "scripts": {
+    "test": "cd test && mocha test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tvrcgo/node-stat.git"
+  },
+  "keywords": [
+    "statistic",
+    "node.js"
+  ],
+  "author": "tvrcgo",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/tvrcgo/node-stat/issues"
+  },
+  "homepage": "https://github.com/tvrcgo/node-stat#readme"
+}
