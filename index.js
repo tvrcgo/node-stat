@@ -10,94 +10,82 @@ var path = require('path');
 var fs = require('fs');
 var util = require('util');
 var qs = require('querystring');
-
-// 应用配置
-var appId = "node-stat";
-var dir = path.join(__dirname, "/log");
-// Loggers
-var loggers = {};
+var crypto = require('crypto');
 
 /**
  * 写日志对象
  * @param {Object} 实例化参数
  */
 function Logger (options) {
-
     if ( !(this instanceof Logger) ) {
         return new Logger(options);
     }
-
-    this._type = options.type || '';
-    this._filename;
-    this._stream;
+    this._name = options.name || 'node-stat';
+    this._dir = options.dir || '.';
+    this._streams = {};
 }
 
 /**
  * 获取日志流
  */
-Logger.prototype.stream = function(){
+Logger.prototype.stream = function(type){
+    type = type || 'log';
+    var tm = _time(),
+        suffix = [tm[0], tm[1], tm[2],tm[3]].join(''), //yyyymmddHH
+        filename = [this._name, type, suffix].join('_') + '.log',
+        skey = _md5(filename),
+        tar = this._streams[type];
 
-    var tm = _TM();
-    var tmstr = tm[0] + '' + tm[1] + '' + tm[2] + '' + tm[3]; //yyyymmddHH
-    var filename = [appId, this._type, tmstr].join('_') + '.log';
-
-    if ( !this._stream || !this._filename || this._filename !== filename ) {
-        if (this._stream) {
-            this._stream.end();
+    if ( !tar || tar.key !== skey ) {
+        if (tar && tar.stream) {
+            tar.stream.end();
         }
-        this._filename = filename;
-        this._stream = fs.createWriteStream(path.join(dir, filename), { flags: 'a', encoding:'utf-8' });
+        this._streams[type] = {
+            key: skey,
+            stream: fs.createWriteStream(path.join(this._dir, filename), {
+                flags: 'a', encoding:'utf-8'
+            })
+        }
     }
 
-    return this._stream;
+    return this._streams[type].stream;
 }
 
 /**
  * 写日志
  * @param {Object} 日志参数对象
  */
-Logger.prototype.log = function(params){
+Logger.prototype.log = function(type, params){
 
-    var stream = this.stream();
-    var fields = [];
-
-    Object.keys(params).forEach(function(key){
+    var line = Object.keys(params).map(function(key){
         var val = !_non(params[key]) ? params[key] : '';
         // 过滤日志分隔符
         if (typeof val == 'string' || val instanceof String) {
             val = val.replace(/`/g, '\'');
         }
-        fields.push(key + '=' + val);
-    })
+        return key + '=' + val;
+    }).join('`') + "\n";
 
-    var log = fields.join('`') + "\n";
-
-    !config.PROD && console.log('['+ this._type +']', log);
-    stream.write(log);
+    var stream = this.stream(type);
+    stream.write(line);
 }
 
 /**
  * 统计对象
  * @param {Object} 实例化参数
+ * @param {object} 初始参数
  */
-function Stat(opts){
+function Stat(opts, params){
     if (!(this instanceof Stat)) {
-        return new Stat(opts);
+        return new Stat(opts, params);
     }
     opts = opts || {};
-
-    appId = opts.appId || opts.id || appId;
-    dir = opts.dir || dir;
-
-    var tm = _TM(),
-        tmstr = tm[0] + '-' + tm[1] + '-' + tm[2] + ' ' + tm[3] + ':' + tm[4] + ':' + tm[5];
-
-    var params = {
-        tm: tmstr
-    };
-
-    this._params = params;
-    return this;
+    this._dir = opts.dir;
+    this._name = opts.name;
+    var tm = _time(true);
+    this._params = _mix({
+        _t: tm
+    }, params);
 }
 
 /**
@@ -113,39 +101,36 @@ Stat.mixin = function(opts){
         var url = req.url || '';
 
         var params = {
-            xpath: req.path,
-            xurl: url,
-            xua: ua,
-            xref: ref
+            _path: req.path,
+            _url: url,
+            _ua: ua,
+            _ref: ref
         };
 
         // 用户唯一ID: xuid
-        // 获取不到 uid 时生成一个随机ID，如非UC用户
         params.xuid = req.query.uid || _uuid();
-
         //合并 req.query 参数
         _mix( params, req.query );
 
-        // 过滤不需要的字段
-        _except( params, ['_ts', '_t'] );
-
         // 扩展 res.stat 对象
-        res.stat = Stat(params);
+        res.stat = Stat(opts, params);
 
         next();
     }
 };
 
 /**
- * 合并新参数
- * @param {Object|Function} 参数对象或函数运行返回对象
+ * 新参数
+ * @param {object|function} 参数对象或函数运行返回对象
  */
-Stat.prototype.mix = function(param){
+Stat.prototype.use = function(param){
     if ( param && typeof param === 'function' ) {
-        param = param.call(this, this._params);
+        _mix(this._params, param.call(this, this._params));
     }
-    param = param || {};
-    _mix( this._params, param );
+    else {
+        param = param || {};
+        _mix(this._params, param);
+    }
     return this;
 };
 
@@ -162,21 +147,32 @@ Stat.prototype.param = function(key) {
  * @param {String} 日志类型
  */
 Stat.prototype.logger = function(type){
-    if (!loggers[type]) {
-        loggers[type] = Logger({ type: type });
+    if (!Stat.logger) {
+        Stat.logger = Logger({
+            name: this._name,
+            dir: this._dir
+        });
     }
-    return loggers[type];
+    if (type) {
+        return {
+            log: function(params){
+                params.type = type;
+                _mix(params, this._params);
+                Stat.logger.log(type, params);
+            }.bind(this)
+        };
+    }
+    return Stat.logger;
 };
 
 /**
  * pageview 统计日志
  * @param {Object} 日志参数对象
  */
-Stat.prototype.pageview = function(opts){
-    opts = opts || {};
-    opts.type = 'pageview';
-    var params = _mix({}, this._params, opts);
-    this.logger('pageview').log(params);
+Stat.prototype.pageview = function(params){
+    params.type = 'pageview';
+    _mix(params, this._params);
+    this.logger().log('pageview', params);
     return this;
 };
 
@@ -184,12 +180,10 @@ Stat.prototype.pageview = function(opts){
  * event 统计日志
  * @param {Object} 日志参数对象
  */
-Stat.prototype.event = function(opts){
-    opts = opts || {};
-    opts.type = 'event';
-    var params = _mix({}, this._params, opts);
-    _except(params, ['xurl', 'xref']);
-    this.logger('event').log(params);
+Stat.prototype.event = function(params){
+    params.type = 'event';
+    _mix(params, this._params);
+    this.logger().log('event', params);
     return this;
 };
 
@@ -197,12 +191,11 @@ Stat.prototype.event = function(opts){
  * click 统计日志
  * @param {Object} 日志参数对象
  */
-Stat.prototype.click = function(opts){
-    opts = opts || {};
-    opts.type = 'click';
-    var params = _mix({}, this._params, opts);
+Stat.prototype.click = function(params){
+    params.type = 'click';
+    _mix(params, this._params);
     _except(params, ['xurl', 'xref']);
-    this.logger('click').log(params);
+    this.logger().log('click', params);
     return this;
 };
 
@@ -210,18 +203,17 @@ Stat.prototype.click = function(opts){
  * error 统计日志
  * @param {Object} 日志参数对象
  */
-Stat.prototype.error = function(opts){
-    opts = opts || {};
-    opts.type = 'error';
-    var params = _mix({}, this._params, opts);
-    this.logger('error').log(params);
+Stat.prototype.error = function(params){
+    params.type = 'error';
+    _mix(params, this._params);
+    this.logger().log('error', params);
     return this;
 };
 
 module.exports = Stat;
 
 /**
- * 生成用户唯一ID
+ * 用户唯一ID
  * @return {String} 3个8位随机串连接
  */
 function _uuid() {
@@ -239,7 +231,7 @@ function _ss() {
 /**
  * 当前时间戳
  */
-function _TM(){
+function _time(format){
 
     var dat = new Date
 	var y = dat.getFullYear();
@@ -256,6 +248,10 @@ function _TM(){
 	if (H <= 9) H = '0' + H;
 	if (M <= 9) M = '0' + M;
 	if (S <= 9) S = '0' + S;
+
+    if (format) {
+        return [y,m,d].join('-') + ' ' +[H,M,S].join(':') + '.' + MM ;
+    }
 
 	return [y,m,d,H,M,S,MM]
 }
@@ -310,4 +306,15 @@ function _query(url) {
  */
 function _non(obj) {
     return obj === null || obj === undefined;
+}
+
+/**
+ * md5
+ * @param  {string} str
+ * @return {string}
+ */
+function _md5(str) {
+    var hash = crypto.createHash('md5');
+    hash.update(str);
+    return hash.digest('hex');
 }
