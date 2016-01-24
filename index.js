@@ -154,12 +154,13 @@ Stat.prototype.logger = function(type){
         });
     }
     if (type) {
+        var _this = this;
         return {
             log: function(params){
                 params.type = type;
                 _mix(params, this._params);
                 Stat.logger.log(type, params);
-            }.bind(this)
+            }.bind(_this)
         };
     }
     return Stat.logger;
