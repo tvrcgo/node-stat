@@ -108,7 +108,7 @@ Stat.mixin = function(opts){
         };
 
         // 用户唯一ID: xuid
-        params.xuid = req.query.uid || _uuid();
+        params._uid = req.query.uid || _uuid();
         //合并 req.query 参数
         _mix( params, req.query );
 
