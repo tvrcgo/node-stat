@@ -108,7 +108,8 @@ Stat.mixin = function(opts){
         };
 
         // 用户唯一ID: xuid
-        params._uid = req.query.uid || _uuid();
+        params._uid = req.query.uid || req.cookies._uid || _uuid();
+        res.cookie('_uid', params._uid, { expires: new Date(Date.now() + 1000*3600*24*30), httpOnly: true }); // 有效期90天
         //合并 req.query 参数
         _mix( params, req.query );
 
@@ -157,9 +158,9 @@ Stat.prototype.logger = function(type){
         var _this = this;
         return {
             log: function(params){
-                params.type = type;
-                _mix(params, this._params);
-                Stat.logger.log(type, params);
+                Stat.logger.log(type, _mix({
+                    type: type
+                }, this._params, params));
             }.bind(_this)
         };
     }
@@ -171,9 +172,9 @@ Stat.prototype.logger = function(type){
  * @param {Object} 日志参数对象
  */
 Stat.prototype.pageview = function(params){
-    params.type = 'pageview';
-    _mix(params, this._params);
-    this.logger().log('pageview', params);
+    this.logger().log('pageview', _mix({
+        type: 'pageview'
+    }, this._params, params));
     return this;
 };
 
@@ -182,9 +183,9 @@ Stat.prototype.pageview = function(params){
  * @param {Object} 日志参数对象
  */
 Stat.prototype.event = function(params){
-    params.type = 'event';
-    _mix(params, this._params);
-    this.logger().log('event', params);
+    this.logger().log('event', _mix({
+        type: 'event'
+    }, this._params, params));
     return this;
 };
 
@@ -193,10 +194,9 @@ Stat.prototype.event = function(params){
  * @param {Object} 日志参数对象
  */
 Stat.prototype.click = function(params){
-    params.type = 'click';
-    _mix(params, this._params);
-    _except(params, ['xurl', 'xref']);
-    this.logger().log('click', params);
+    this.logger().log('click', _mix({
+        type: 'click'
+    }, this._params, params));
     return this;
 };
 
@@ -205,9 +205,9 @@ Stat.prototype.click = function(params){
  * @param {Object} 日志参数对象
  */
 Stat.prototype.error = function(params){
-    params.type = 'error';
-    _mix(params, this._params);
-    this.logger().log('error', params);
+    this.logger().log('error', _mix({
+        type: 'error'
+    }, this._params, params));
     return this;
 };
 

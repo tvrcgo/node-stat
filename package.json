@@ -19,5 +19,8 @@
   "bugs": {
     "url": "https://github.com/tvrcgo/node-stat/issues"
   },
-  "homepage": "https://github.com/tvrcgo/node-stat#readme"
+  "homepage": "https://github.com/tvrcgo/node-stat#readme",
+  "dependencies": {
+    "body-parser": "^1.15.0"
+  }
 }
